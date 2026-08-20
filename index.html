@@ -597,7 +597,18 @@
 
         .setlist.ativa {
             display: block;
-            animation: aparece 0.35s ease;
+            animation: sobe 0.35s ease;
+        }
+
+        @keyframes sobe {
+            from {
+                opacity: 0;
+                transform: translateY(-12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .setlist .agora {
@@ -859,7 +870,7 @@
 
         .carrinho.ativa {
             display: block;
-            animation: aparece 0.35s ease;
+            animation: sobe 0.35s ease;
         }
 
         .carrinho h3 {
