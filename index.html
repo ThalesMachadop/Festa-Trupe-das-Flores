@@ -2302,12 +2302,14 @@
             <h2>Painel <span class="tic">dos administradores</span></h2>
             <div class="admin-gate" id="admin-gate">
                 <p class="lead">Área restrita 🔒</p>
-                <input type="password" id="senha-admin" placeholder="Senha do admin" autocomplete="off">
+                <input type="email" id="admin-email" placeholder="Email do admin" autocomplete="off">
+                <input type="password" id="admin-senha" placeholder="Senha do admin" autocomplete="off">
                 <button class="bloq-btn" onclick="tentarAdmin()">Entrar</button>
                 <div id="admin-erro"></div>
             </div>
             <div id="admin-painel" style="display:none">
                 <p class="lead" id="admin-total">0 confirmados</p>
+                <button class="finalizar-btn" onclick="sairAdmin()" style="margin-bottom:14px">Sair da conta</button>
                 <div class="form-admin">
                     <input type="text" id="nome-admin" placeholder="Nome da pessoa" autocomplete="off">
                     <button class="finalizar-btn" onclick="adicionarConvidadoAdmin()">➕ Adicionar</button>
@@ -2333,7 +2335,18 @@
 
     <footer>© 2026 Festa das Flores 🌸</footer>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <script>
+        var SUPABASE_URL = 'https://papbvuolghjvzdraaues.supabase.co';
+        var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhcGJ2dW9sZ2hqdnpkcmFhdWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyNjEyMTQsImV4cCI6MjEwMjgzNzIxNH0.5fpfEI66FTcM5lYYYiyh6DyXXmNNv9b8Z_gBnZALmRk';
+        var supabase = null;
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+        } catch (e) {
+            supabase = null;
+        }
+
         var DATA_FESTA = new Date('2026-08-22T17:00:00');
 
         var SENHA = '130';
@@ -2714,57 +2727,138 @@
         }
 
         var banco = {
+            usarSupabase: function () {
+                return !!supabase;
+            },
+
             adicionarConvidado: function (nome) {
-                var lista = this.listarConvidados();
                 nome = nome.charAt(0).toUpperCase() + nome.slice(1);
+                if (supabase) {
+                    return supabase.from('convidados').insert({ nome: nome }).then(function (res) {
+                        return { ok: !res.error, nome: nome };
+                    });
+                }
+                var lista = this.listarConvidadosLocal();
                 if (lista.indexOf(nome) === -1) {
                     lista.push(nome);
                     localStorage.setItem('convidados', JSON.stringify(lista));
                 }
-                return lista;
+                return Promise.resolve({ ok: true, nome: nome });
             },
-            listarConvidados: function () {
+
+            listarConvidadosLocal: function () {
                 try {
                     return JSON.parse(localStorage.getItem('convidados')) || [];
                 } catch (e) {
                     return [];
                 }
             },
-            removerConvidado: function (i) {
-                var lista = this.listarConvidados();
-                lista.splice(i, 1);
-                localStorage.setItem('convidados', JSON.stringify(lista));
-                return lista;
-            },
-            enviarFoto: function (nome, descricao, dataUrl) {
-                var fotos = this.listarFotos();
-                fotos.unshift({ nome: nome, descricao: descricao || '', dataUrl: dataUrl });
-                try {
-                    localStorage.setItem('fotos', JSON.stringify(fotos));
-                    return true;
-                } catch (e) {
-                    return false;
+
+            listarConvidados: function () {
+                if (supabase) {
+                    return supabase.from('convidados').select('id, nome, criado_em').order('id', { ascending: true }).then(function (res) {
+                        return res.error ? [] : res.data;
+                    });
                 }
+                return Promise.resolve(this.listarConvidadosLocal().map(function (nome, i) {
+                    return { id: i, nome: nome };
+                }));
             },
-            atualizarFoto: function (i, nome, descricao) {
-                var fotos = this.listarFotos();
-                fotos[i].nome = nome;
-                fotos[i].descricao = descricao || '';
+
+            removerConvidado: function (id) {
+                if (supabase) {
+                    return supabase.from('convidados').delete().eq('id', id).then(function (res) {
+                        return !res.error;
+                    });
+                }
+                var lista = this.listarConvidadosLocal();
+                lista.splice(id, 1);
+                localStorage.setItem('convidados', JSON.stringify(lista));
+                return Promise.resolve(true);
+            },
+
+            enviarFoto: function (nome, descricao, dataUrl) {
+                if (supabase) {
+                    return this.subirArquivo(dataUrl).then(function (res) {
+                        if (!res) return false;
+                        return supabase.from('fotos').insert({
+                            nome: nome,
+                            descricao: descricao || '',
+                            url: res.url,
+                            caminho: res.caminho
+                        }).then(function (r) {
+                            return !r.error;
+                        });
+                    });
+                }
+                var fotos = this.listarFotosLocal();
+                fotos.unshift({ nome: nome, descricao: descricao || '', url: dataUrl, caminho: '' });
                 localStorage.setItem('fotos', JSON.stringify(fotos));
-                return fotos;
+                return Promise.resolve(true);
             },
-            removerFoto: function (i) {
-                var fotos = this.listarFotos();
-                fotos.splice(i, 1);
-                localStorage.setItem('fotos', JSON.stringify(fotos));
-                return fotos;
+
+            subirArquivo: function (dataUrl) {
+                return fetch(dataUrl).then(function (r) { return r.blob(); }).then(function (blob) {
+                    var caminho = 'foto-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
+                    return supabase.storage.from('fotos').upload(caminho, blob, { contentType: 'image/jpeg' }).then(function (up) {
+                        if (up.error) return null;
+                        var url = supabase.storage.from('fotos').getPublicUrl(caminho).data.publicUrl;
+                        return { url: url, caminho: caminho };
+                    });
+                }).catch(function () { return null; });
             },
-            listarFotos: function () {
+
+            listarFotosLocal: function () {
                 try {
                     return JSON.parse(localStorage.getItem('fotos')) || [];
                 } catch (e) {
                     return [];
                 }
+            },
+
+            listarFotos: function () {
+                if (supabase) {
+                    return supabase.from('fotos').select('*').order('id', { ascending: false }).then(function (res) {
+                        return res.error ? [] : res.data;
+                    });
+                }
+                var fotos = this.listarFotosLocal().map(function (f, i) { f.__i = i; f.id = i; return f; });
+                return Promise.resolve(fotos);
+            },
+
+            atualizarFoto: function (id, nome, descricao) {
+                if (supabase) {
+                    return supabase.from('fotos').update({ nome: nome, descricao: descricao || '' }).eq('id', id).then(function (res) {
+                        return !res.error;
+                    });
+                }
+                var fotos = this.listarFotosLocal();
+                if (fotos[id]) {
+                    fotos[id].nome = nome;
+                    fotos[id].descricao = descricao || '';
+                    localStorage.setItem('fotos', JSON.stringify(fotos));
+                }
+                return Promise.resolve(true);
+            },
+
+            removerFoto: function (foto) {
+                if (supabase) {
+                    var inicio = Promise.resolve();
+                    if (foto && foto.caminho) {
+                        inicio = supabase.storage.from('fotos').remove([foto.caminho]).then(function () {});
+                    }
+                    return inicio.then(function () {
+                        return supabase.from('fotos').delete().eq('id', foto.id).then(function (res) {
+                            return !res.error;
+                        });
+                    });
+                }
+                var fotos = this.listarFotosLocal();
+                if (foto && typeof foto.__i === 'number') {
+                    fotos.splice(foto.__i, 1);
+                    localStorage.setItem('fotos', JSON.stringify(fotos));
+                }
+                return Promise.resolve(true);
             }
         };
 
@@ -2780,23 +2874,31 @@
             if (nome === 'admin') renderizarConvidadosAdmin();
         }
 
-        var SENHA_ADMIN = '@Thales#1234';
-
         function tentarAdmin() {
-            var input = document.getElementById('senha-admin');
-            var valor = input.value.trim();
-            if (valor === SENHA_ADMIN) {
-                sessionStorage.setItem('admin-liberado', '1');
-                liberarAdmin();
-            } else {
-                input.classList.add('treme');
-                input.value = '';
-                document.getElementById('admin-erro').textContent = 'Senha errada! 🔒';
-                setTimeout(function () { input.classList.remove('treme'); }, 450);
+            var email = document.getElementById('admin-email').value.trim();
+            var senha = document.getElementById('admin-senha').value;
+            var erro = document.getElementById('admin-erro');
+            if (!email || !senha) {
+                erro.textContent = 'Digita email e senha! 🙄';
+                return;
             }
+            if (!supabase) {
+                erro.textContent = 'Banco não configurado.';
+                return;
+            }
+            erro.textContent = 'Entrando…';
+            supabase.auth.signInWithPassword({ email: email, password: senha }).then(function (res) {
+                if (res.error) {
+                    erro.textContent = 'Email ou senha errados! 🔒';
+                    document.getElementById('admin-senha').value = '';
+                    return;
+                }
+                erro.textContent = '';
+                liberarAdmin();
+            });
         }
 
-        document.getElementById('senha-admin').addEventListener('keydown', function (e) {
+        document.getElementById('admin-senha').addEventListener('keydown', function (e) {
             if (e.key === 'Enter') tentarAdmin();
         });
 
@@ -2806,21 +2908,33 @@
             renderizarConvidadosAdmin();
         }
 
+        function sairAdmin() {
+            if (supabase) supabase.auth.signOut();
+            document.getElementById('admin-gate').style.display = 'block';
+            document.getElementById('admin-painel').style.display = 'none';
+            document.getElementById('admin-email').value = '';
+            document.getElementById('admin-senha').value = '';
+        }
+
+        function verificarSessaoAdmin() {
+            if (!supabase) return;
+            supabase.auth.getSession().then(function (res) {
+                if (res.data && res.data.session) liberarAdmin();
+            });
+        }
+
         function renderizarConvidadosAdmin() {
-            var lista = banco.listarConvidados();
-            if (sessionStorage.getItem('admin-liberado') === '1') {
-                document.getElementById('admin-gate').style.display = 'none';
-                document.getElementById('admin-painel').style.display = 'block';
-            }
-            document.getElementById('admin-total').textContent = lista.length + (lista.length === 1 ? ' confirmado' : ' confirmados');
-            var el = document.getElementById('lista-admin');
-            if (!lista.length) {
-                el.innerHTML = '<p style="color:var(--leitura)">Ninguém confirmou ainda.</p>';
-                return;
-            }
-            el.innerHTML = lista.map(function (n, i) {
-                return '<div class="admin-item"><span>✅ ' + n + '</span><button class="admin-remove" onclick="removerConvidadoAdmin(' + i + ')">✕</button></div>';
-            }).join('');
+            banco.listarConvidados().then(function (lista) {
+                document.getElementById('admin-total').textContent = lista.length + (lista.length === 1 ? ' confirmado' : ' confirmados');
+                var el = document.getElementById('lista-admin');
+                if (!lista.length) {
+                    el.innerHTML = '<p style="color:var(--leitura)">Ninguém confirmou ainda.</p>';
+                    return;
+                }
+                el.innerHTML = lista.map(function (c) {
+                    return '<div class="admin-item"><span>✅ ' + c.nome + '</span><button class="admin-remove" onclick="removerConvidadoAdmin(' + c.id + ')">✕</button></div>';
+                }).join('');
+            });
         }
 
         function adicionarConvidadoAdmin() {
@@ -2832,17 +2946,21 @@
                 mostrarToast('Digita um nome! 🙄');
                 return;
             }
-            banco.adicionarConvidado(nome);
-            input.value = '';
-            renderizarConvidadosAdmin();
-            mostrarToast(nome + ' adicionado! 🎊');
+            banco.adicionarConvidado(nome).then(function () {
+                input.value = '';
+                renderizarConvidadosAdmin();
+                mostrarToast(nome + ' adicionado! 🎊');
+            });
         }
 
-        function removerConvidadoAdmin(i) {
-            banco.removerConvidado(i);
-            renderizarConvidadosAdmin();
-            mostrarToast('Removido da lista! 🗑️');
+        function removerConvidadoAdmin(id) {
+            banco.removerConvidado(id).then(function () {
+                renderizarConvidadosAdmin();
+                mostrarToast('Removido da lista! 🗑️');
+            });
         }
+
+        verificarSessaoAdmin();
 
         if (location.search.indexOf('posfesta') !== -1) {
             document.getElementById('nav-posfesta').style.display = '';
@@ -2935,19 +3053,18 @@
             document.getElementById('preview-imagem').innerHTML = '';
         }
 
-        function abrirEdicao(i) {
-            var fotos = banco.listarFotos();
+        function abrirEdicao(foto) {
             previewModo = 'edicao';
-            previewAlvo = i;
+            previewAlvo = foto.id;
             previewArquivos = [];
             previewDescricoes = [];
             document.getElementById('preview-titulo').textContent = 'Editar foto';
             document.getElementById('preview-confirmar').textContent = '💾 Salvar';
             document.getElementById('preview-msg').textContent = '';
-            document.getElementById('preview-imagem').innerHTML = '<img src="' + fotos[i].dataUrl + '" alt="Foto">';
+            document.getElementById('preview-imagem').innerHTML = '<img src="' + foto.url + '" alt="Foto">';
             document.getElementById('preview-nav').style.display = 'none';
-            document.getElementById('preview-nome').value = fotos[i].nome;
-            document.getElementById('preview-descricao').value = fotos[i].descricao || '';
+            document.getElementById('preview-nome').value = foto.nome;
+            document.getElementById('preview-descricao').value = foto.descricao || '';
             document.getElementById('preview-upload').style.display = 'flex';
         }
 
@@ -2959,10 +3076,11 @@
                     document.getElementById('preview-msg').textContent = 'Digita um nome! 🙄';
                     return;
                 }
-                banco.atualizarFoto(previewAlvo, nome.charAt(0).toUpperCase() + nome.slice(1), descricao);
-                fecharPreview();
-                renderizarFotos();
-                mostrarToast('Foto atualizada! ✏️');
+                banco.atualizarFoto(previewAlvo, nome.charAt(0).toUpperCase() + nome.slice(1), descricao).then(function () {
+                    fecharPreview();
+                    renderizarFotos();
+                    mostrarToast('Foto atualizada! ✏️');
+                });
                 return;
             }
             salvarPreviewEdicao();
@@ -2971,23 +3089,28 @@
                 document.getElementById('preview-msg').textContent = 'Digita seu nome! 🙄';
                 return;
             }
+            document.getElementById('preview-confirmar').disabled = true;
             var faltam = previewArquivos.length;
             var enviadas = 0;
             previewArquivos.forEach(function (file, idx) {
                 comprimirFoto(file, function (dataUrl) {
-                    if (banco.enviarFoto(nome, previewDescricoes[idx], dataUrl)) enviadas++;
-                    faltam--;
-                    if (faltam === 0) {
-                        fecharPreview();
-                        renderizarFotos();
-                        mostrarToast(enviadas + ' foto' + (enviadas > 1 ? 's' : '') + ' enviada' + (enviadas > 1 ? 's' : '') + '! 📸');
-                    }
+                    banco.enviarFoto(nome, previewDescricoes[idx], dataUrl).then(function (ok) {
+                        if (ok) enviadas++;
+                        faltam--;
+                        if (faltam === 0) {
+                            document.getElementById('preview-confirmar').disabled = false;
+                            fecharPreview();
+                            renderizarFotos();
+                            mostrarToast(enviadas + ' foto' + (enviadas > 1 ? 's' : '') + ' enviada' + (enviadas > 1 ? 's' : '') + '! 📸');
+                        }
+                    });
                 });
             });
         }
 
         var paginaAtual = 0;
         var porPagina = 3;
+        var fotosAtuais = [];
 
         function totalPaginas(fotos) {
             return Math.max(1, Math.ceil(fotos.length / porPagina));
@@ -3014,65 +3137,63 @@
         }
 
         function renderizarFotos() {
-            var fotos = banco.listarFotos();
-            var carrossel = document.getElementById('carrossel-fotos');
-            var vazio = document.getElementById('galeria-vazia');
-            if (!fotos.length) {
-                carrossel.style.display = 'none';
-                document.getElementById('foto-contador').textContent = '';
-                vazio.style.display = 'block';
-                return;
-            }
-            carrossel.style.display = 'flex';
-            vazio.style.display = 'none';
-            document.getElementById('palco-fotos').innerHTML = fotos.map(function (f, i) {
-                return '<div class="foto-card">' +
-                    '<img src="' + f.dataUrl + '" alt="Foto de ' + f.nome + '">' +
-                    '<div class="foto-nome">📸 ' + f.nome + '</div>' +
-                    (f.descricao ? '<div class="foto-desc">' + f.descricao + '</div>' : '') +
-                    '<div class="foto-acoes">' +
-                    '<button class="foto-btn" onclick="editarFoto(' + i + ')">✏️ Editar</button>' +
-                    '<button class="foto-btn" onclick="baixarFoto(' + i + ')">⬇️ Baixar</button>' +
-                    '<button class="foto-btn foto-remover" onclick="removerFoto(' + i + ')">🗑️ Remover</button>' +
-                    '</div>' +
-                    '</div>';
-            }).join('');
-            mostrarPagina(paginaAtual, fotos);
+            banco.listarFotos().then(function (fotos) {
+                fotosAtuais = fotos;
+                var carrossel = document.getElementById('carrossel-fotos');
+                var vazio = document.getElementById('galeria-vazia');
+                if (!fotos.length) {
+                    carrossel.style.display = 'none';
+                    document.getElementById('foto-contador').textContent = '';
+                    vazio.style.display = 'block';
+                    return;
+                }
+                carrossel.style.display = 'flex';
+                vazio.style.display = 'none';
+                document.getElementById('palco-fotos').innerHTML = fotos.map(function (f, i) {
+                    return '<div class="foto-card">' +
+                        '<img src="' + f.url + '" alt="Foto de ' + f.nome + '">' +
+                        '<div class="foto-nome">📸 ' + f.nome + '</div>' +
+                        (f.descricao ? '<div class="foto-desc">' + f.descricao + '</div>' : '') +
+                        '<div class="foto-acoes">' +
+                        '<button class="foto-btn" onclick="editarFoto(' + i + ')">✏️ Editar</button>' +
+                        '<button class="foto-btn" onclick="baixarFoto(' + i + ')">⬇️ Baixar</button>' +
+                        '<button class="foto-btn foto-remover" onclick="removerFoto(' + i + ')">🗑️ Remover</button>' +
+                        '</div>' +
+                        '</div>';
+                }).join('');
+                mostrarPagina(paginaAtual, fotos);
+            });
         }
 
         function navegarFoto(delta) {
-            var fotos = banco.listarFotos();
-            if (!fotos.length) return;
-            mostrarPagina(paginaAtual + delta, fotos);
+            if (!fotosAtuais.length) return;
+            mostrarPagina(paginaAtual + delta, fotosAtuais);
         }
 
         function editarFoto(i) {
-            abrirEdicao(i);
+            abrirEdicao(fotosAtuais[i]);
         }
 
         function removerFoto(i) {
             if (!confirm('Remover essa foto?')) return;
-            banco.removerFoto(i);
-            renderizarFotos();
-            mostrarToast('Foto removida! 🗑️');
+            banco.removerFoto(fotosAtuais[i]).then(function () {
+                renderizarFotos();
+                mostrarToast('Foto removida! 🗑️');
+            });
         }
 
         function baixarFoto(i) {
-            var foto = banco.listarFotos()[i];
-            var parte = foto.dataUrl.split(',');
-            var mime = parte[0].match(/:(.*?);/)[1];
-            var bin = atob(parte[1]);
-            var arr = new Uint8Array(bin.length);
-            for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
-            var blob = new Blob([arr], { type: mime });
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = 'festa-das-flores-' + foto.nome.replace(/[^a-zA-Z0-9]/g, '_') + '.jpg';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
+            var foto = fotosAtuais[i];
+            fetch(foto.url).then(function (r) { return r.blob(); }).then(function (blob) {
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'festa-das-flores-' + foto.nome.replace(/[^a-zA-Z0-9]/g, '_') + '.jpg';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            });
         }
 
         function adicionarCampoPessoa() {
