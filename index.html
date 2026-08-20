@@ -2340,9 +2340,10 @@
     <script>
         var SUPABASE_URL = 'https://papbvuolghjvzdraaues.supabase.co';
         var SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhcGJ2dW9sZ2hqdnpkcmFhdWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyNjEyMTQsImV4cCI6MjEwMjgzNzIxNH0.5fpfEI66FTcM5lYYYiyh6DyXXmNNv9b8Z_gBnZALmRk';
+        var supabaseMod = window.supabase;
         var supabase = null;
         try {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+            supabase = supabaseMod ? supabaseMod.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
         } catch (e) {
             supabase = null;
         }
