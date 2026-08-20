@@ -2088,7 +2088,7 @@
         <span class="nav-logo">FESTA DAS <span class="x">FLORES</span></span>
         <div class="nav-botoes">
             <button class="nav-btn ativo" id="nav-inicio" onclick="mostrarView('inicio')">Início</button>
-            <button class="nav-btn" id="nav-posfesta" onclick="mostrarView('posfesta')">Pós-Festa</button>
+            <button class="nav-btn" id="nav-posfesta" style="display:none" onclick="mostrarView('posfesta')">Pós-Festa</button>
             <button class="nav-btn" id="nav-admin" style="display:none" onclick="mostrarView('admin')">Admin</button>
         </div>
     </nav>
@@ -2823,6 +2823,10 @@
             banco.removerConvidado(i);
             renderizarConvidadosAdmin();
             mostrarToast('Removido da lista! 🗑️');
+        }
+
+        if (location.search.indexOf('posfesta') !== -1) {
+            document.getElementById('nav-posfesta').style.display = '';
         }
 
         if (location.search.indexOf('admin') !== -1) {
