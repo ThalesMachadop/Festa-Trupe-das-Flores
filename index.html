@@ -2343,6 +2343,7 @@
             var valor = input.value.trim();
             if (valor === SENHA) {
                 document.getElementById('bloqueio').classList.add('passou');
+                preaquecerAudios();
                 setTimeout(function () { document.getElementById('bloqueio').remove(); }, 700);
             } else {
                 input.classList.add('treme');
@@ -2440,6 +2441,14 @@
         criarAudio('larica', 'VEIGH - Talvez você precise de mim (Eu Venci o Mundo) - VEIGH (youtube).mp3');
         criarAudio('panqueca', 'FISHER - Atmosphere (ft. Kita Alexander) - Selected. (youtube).mp3');
         criarAudio('pretinha', 'NandaTsunami - P.I.T.T.Y. (Parecendo Uma Cafetina) (prod. Stick, Torelli e Bvga Beatz) - NandaTsunami (youtube).mp3');
+
+        function preaquecerAudios() {
+            Object.keys(musicas).forEach(function (nome) {
+                var a = musicas[nome];
+                a.preload = 'auto';
+                a.load();
+            });
+        }
 
         var audioAtual = null;
 
